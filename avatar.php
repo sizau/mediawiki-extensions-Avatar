@@ -1,4 +1,5 @@
 <?php
+
 // For some configurations, extensions are symbolic linked
 // This is the workaround for ../..
 $dir = dirname(dirname(dirname($_SERVER['SCRIPT_FILENAME'])));
@@ -12,6 +13,17 @@ require_once 'includes/PHPVersionCheck.php';
 wfEntryPointCheck('avatar.php');
 
 require 'includes/WebStart.php';
+
+if ( !function_exists( 'mwMakeHash' ) ) {
+    function mwMakeHash( $value ) {
+        $hash = hash( 'fnv132', $value );
+        return substr(
+            base_convert( $hash, 16, 36 ),
+            0,
+            5
+        );
+    }
+}
 
 $query = $wgRequest->getQueryValues();
 
@@ -34,6 +46,7 @@ if (isset($query['user'])) {
 }
 
 $response = $wgRequest->response();
+// 新增
 if (filter_var($path, FILTER_VALIDATE_URL)) {
     // If $path is a full URL, redirect directly
     $response->statusHeader('302');
@@ -58,6 +71,9 @@ if ($path === null) {
 
 	global $wgDefaultAvatar;
 	$response->header('Location: ' . $wgDefaultAvatar);
+
+	$mediawiki = new MediaWiki();
+	$mediawiki->doPostOutputShutdown('fast');
 	exit;
 }
 
@@ -83,24 +99,31 @@ case 'sendfile':
 case 'redirection':
 default:
 	$ver = '';
-
+	
 	// ver will be propagated to the relocated image
-	if (isset($query['ver'])) {
-		$ver = $query['ver'];
-	} else {
-		global $wgVersionAvatar;
-		if ($wgVersionAvatar) {
-			global $wgAvatarUploadDirectory;
-			$ver = filemtime($wgAvatarUploadDirectory . $path);
-		}
-	}
+	if (isset($query['v'])) {
+		// error_log("111", 3, '/www/sites/expanded/index/extensions/Avatar/avatar_debug.log');
+        $ver = $query['v'];
+    } elseif (isset($query['ver'])) {
+        $ver = $query['ver'];
+    } else {
+		global $wgAvatarUploadDirectory;
+		$timestamp = filemtime($wgAvatarUploadDirectory . $path);
+		$ver = mwMakeHash($timestamp);
+    }
 
 	if ($ver) {
+        if (strpos($path, '?') !== false) {
+            $path .= '&v=' . $ver;
+        } else {
+            $path .= '?v=' . $ver;
+        }
+    } else {
 		if (strpos($path, '?') !== false) {
-			$path .= '&ver=' . $ver;
-		} else {
-			$path .= '?ver=' . $ver;
-		}
+            $path .= '&v=default';
+        } else {
+            $path .= '?v=default';
+        }
 	}
 
 	// We use send custom header, in order to control cache
@@ -116,3 +139,6 @@ default:
 	$response->header('Location: ' . $wgAvatarUploadPath . $path);
 	break;
 }
+
+$mediawiki = new MediaWiki();
+$mediawiki->doPostOutputShutdown('fast');
